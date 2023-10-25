@@ -5,8 +5,14 @@ use std::cmp::min;
 
 #[derive(Copy, Clone)]
 pub enum Alphabet {
-    RFC4648 { padding: bool },
     Crockford,
+    RFC4648 {
+        padding: bool,
+    },
+    Custom {
+        alphabet: &'static [u8],
+        padding: bool,
+    },
 }
 
 const RFC4648_ALPHABET: &'static [u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -14,8 +20,9 @@ const CROCKFORD_ALPHABET: &'static [u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 pub fn encode(alphabet: Alphabet, data: &[u8]) -> String {
     let (alphabet, padding) = match alphabet {
-        Alphabet::RFC4648 { padding } => (RFC4648_ALPHABET, padding),
         Alphabet::Crockford => (CROCKFORD_ALPHABET, false),
+        Alphabet::RFC4648 { padding } => (RFC4648_ALPHABET, padding),
+        Alphabet::Custom { alphabet, padding } => (alphabet, padding),
     };
     let mut ret = Vec::with_capacity((data.len() + 3) / 4 * 5);
 
@@ -61,14 +68,30 @@ const CROCKFORD_INV_ALPHABET: [i8; 43] = [
     18, 19, 1, 20, 21, 0, 22, 23, 24, 25, 26, -1, 27, 28, 29, 30, 31,
 ];
 
+fn inv_alphabet(alphabet: &[u8]) -> Option<[i8; 43]> {
+    let mut inv: [i8; 43] = [-1; 43];
+    for (i, v) in alphabet.iter().enumerate() {
+        let inv_i = *v as usize;
+        if inv_i >= 43 {
+            return None;
+        }
+        inv[*v as usize] = i as i8;
+    }
+    Some(inv)
+}
+
 pub fn decode(alphabet: Alphabet, data: &str) -> Option<Vec<u8>> {
     if !data.is_ascii() {
         return None;
     }
     let data = data.as_bytes();
     let alphabet = match alphabet {
-        Alphabet::RFC4648 { .. } => RFC4648_INV_ALPHABET,
         Alphabet::Crockford => CROCKFORD_INV_ALPHABET,
+        Alphabet::RFC4648 { .. } => RFC4648_INV_ALPHABET,
+        Alphabet::Custom { alphabet, .. } => match inv_alphabet(alphabet) {
+            Some(inv) => inv,
+            None => return None,
+        },
     };
     let mut unpadded_data_length = data.len();
     for i in 1..min(6, data.len()) + 1 {
